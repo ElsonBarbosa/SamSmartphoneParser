@@ -34,6 +34,7 @@ namespace SmartphoneParserReport
             }
 
 
+
             var api = new ApiService();
 
             // Aqui você pode fazer qualquer coisa com os dados

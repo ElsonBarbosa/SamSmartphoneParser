@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Configuration;
 using System.IO;
 
 namespace SmartphoneParserReport
@@ -13,13 +12,35 @@ namespace SmartphoneParserReport
             return index >= 0 ? line.Substring(index + 1).Trim() : "N/A";
         }
 
+        private static string ReadEquipmentFromIni()
+        {
+            string configFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.ini");
+
+            if (!File.Exists(configFile))
+                throw new FileNotFoundException("Arquivo config.ini não encontrado.");
+
+            foreach (var line in File.ReadAllLines(configFile))
+            {
+                if (line.StartsWith("Equipment"))
+                {
+                    return line.Split('=')[1].Trim();
+                }
+            }
+
+            throw new InvalidOperationException("Chave 'Equipment' não encontrada no config.ini.");
+        }
+
         public static void ExtractInfo(List<string> lines, string fileName)
         {
             string jig = "N/A";
             string result = "N/A";
             string failure = "N/A";
             string serialNumber = "N/A";
-            string equipPrefix = ConfigurationManager.AppSettings["EquipmentPrefix"];
+
+            // 🔹 pega direto do config.ini
+            string equipPrefix = ReadEquipmentFromIni();
+
+            // step = primeiros 2 chars do prefixo
             string step = equipPrefix.Length >= 2 ? equipPrefix.Substring(0, 2) : "XX";
 
             foreach (var line in lines)
@@ -36,12 +57,21 @@ namespace SmartphoneParserReport
                     serialNumber = GetValue(trimmed);
             }
 
-            string nameWithoutExtension = Path.GetFileNameWithoutExtension(fileName);
-            string lastTwo = nameWithoutExtension.Length >= 2
-                ? nameWithoutExtension.Substring(nameWithoutExtension.Length - 2)
-                : "XX";
-
-            string equipamento = equipPrefix + lastTwo;
+            // --- Define equipamento final ---
+            string equipamento;
+            if (equipPrefix.Contains("DL"))
+            {
+                // DL → concatena JIG
+                if (int.TryParse(jig, out int jigNumber))
+                    equipamento = $"{equipPrefix}{jigNumber:00}";
+                else
+                    equipamento = $"{equipPrefix}XX"; // fallback se JIG não for numérico
+            }
+            else
+            {
+                // Outros → usa direto
+                equipamento = equipPrefix;
+            }
 
             var api = new ApiService();
 
@@ -50,7 +80,6 @@ namespace SmartphoneParserReport
             string dateFolder = DateTime.Now.ToString("dd-MM");
             string fullPath = Path.Combine(basePath, dateFolder);
 
-            // Cria pasta do dia se não existir
             if (!Directory.Exists(fullPath))
                 Directory.CreateDirectory(fullPath);
 
@@ -62,7 +91,7 @@ namespace SmartphoneParserReport
                 {
                     try
                     {
-                        Directory.Delete(dir, true); // deleta recursivamente
+                        Directory.Delete(dir, true);
                         Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] Pasta antiga deletada: {folderName}");
                     }
                     catch (Exception ex)
@@ -74,7 +103,6 @@ namespace SmartphoneParserReport
 
             // --- Sufixo de arquivo ---
             string fileSuffix = result == "FAIL" ? "_FAIL" : result == "PASS" ? "_PASS" : "";
-
             string logFileName = Path.Combine(fullPath, $"{serialNumber}{fileSuffix}.txt");
 
             // Evita processar PASS duplicado
@@ -97,7 +125,6 @@ namespace SmartphoneParserReport
             // --- Processa log via RawLogProcessor ---
             Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] Processando raw log de {serialNumber}...");
             RawLogProcessor.ProcessRawLog(logFileName, step);
-
         }
     }
 }

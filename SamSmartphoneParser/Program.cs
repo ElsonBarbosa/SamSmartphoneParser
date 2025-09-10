@@ -1,6 +1,7 @@
-﻿
-using System;
+﻿using System;
 using System.Configuration;
+using System.IO;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace SmartphoneParserReport
@@ -9,11 +10,15 @@ namespace SmartphoneParserReport
     {
         static void Main(string[] args)
         {
+            RunMonitorWithConfig();
+        }
+
+        static void RunMonitorWithConfig()
+        {
+            string equipment = ConfigManager.GetOrCreateConfig();
             string folderPath = ConfigurationManager.AppSettings["LogPath"];
             string apiURL = ConfigurationManager.AppSettings["APIURLBASE"];
             string connTest = ConfigurationManager.AppSettings["CHKCONN"];
-
-            // Combina base URL + endpoint
             string apiUrl = $"{apiURL}{connTest}";
 
             if (!ApiService.CheckConnection(apiUrl))
@@ -24,7 +29,7 @@ namespace SmartphoneParserReport
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error
                 );
-                return; // encerra se não conectar
+                return;
             }
 
             Console.ForegroundColor = ConsoleColor.Green;
@@ -33,7 +38,30 @@ namespace SmartphoneParserReport
             Console.ResetColor();
 
             var monitor = new LogMonitor(folderPath, apiUrl);
-            monitor.Start();
+
+            // Rodar o monitor em uma thread separada
+            Thread monitorThread = new Thread(monitor.Start) { IsBackground = true };
+            monitorThread.Start();
+
+            // Loop para escutar comandos do console
+            while (true)
+            {
+                string command = Console.ReadLine()?.Trim().ToUpper();
+                if (command == "RESET")
+                {
+                    // Apaga o config.ini
+                    string configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.ini");
+                    if (File.Exists(configPath))
+                        File.Delete(configPath);
+
+                    Console.WriteLine("Configuração apagada. Reconfigurando...");
+
+                    // Recria a configuração
+                    equipment = ConfigManager.GetOrCreateConfig();
+
+                    Console.WriteLine("Configuração concluída. Monitoramento continua...");
+                }
+            }
         }
     }
 }
